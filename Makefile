@@ -29,23 +29,23 @@ VENV_BIN := .venv/bin
 PYTHON := python3
 endif
 
-.PHONY: all help install install-backend install-frontend run-backend run-frontend run hu23-identity-fixtures hu23-local-reset
+.PHONY: all help install install-backend install-frontend run-backend run-frontend run test test-backend test-frontend
 
 all: run
 
 help:
-	@echo "Available targets:"
-	@echo "  make install-backend   - create backend venv and install Python dependencies"
-	@echo "  make install-frontend  - install frontend npm dependencies"
-	@echo "  make run-backend       - start FastAPI backend on port 8000"
-	@echo "  make run-frontend      - start Vite frontend on port 5173"
-	@echo "  make run               - install dependencies and start both servers"
-	@echo "  make test-fraude       - run automated bot detection tests"
-	@echo "  make hu23-identity-fixtures - create HU23 test accounts in verified local Supabase only"
-	@echo "  make hu23-local-reset - rebuild local Supabase from the current snapshot (deletes local data)"
+	@echo "LexPloit - Comandos disponibles:"
+	@echo "  make install           - Instalar dependencias de backend y frontend"
+	@echo "  make install-backend   - Crear venv e instalar dependencias Python"
+	@echo "  make install-frontend  - Instalar dependencias Node.js en frontend"
+	@echo "  make run-backend       - Iniciar servidor FastAPI (puerto 8000)"
+	@echo "  make run-frontend      - Iniciar servidor Vite (puerto 5173)"
+	@echo "  make run               - Iniciar backend y frontend en simultaneo"
+	@echo "  make test-backend      - Ejecutar pruebas pytest (Tier 1)"
+	@echo "  make test-frontend     - Ejecutar pruebas vitest en frontend"
+	@echo "  make test              - Ejecutar todas las pruebas"
 	@echo ""
-	@echo "En Windows 'make run' necesita el bash de Git. Si no esta instalado,"
-	@echo "usa 'make run-backend' y 'make run-frontend' en dos terminales."
+	@echo "Nota: En Windows sin Git Bash, ejecutar 'make run-backend' y 'make run-frontend' en terminales separadas."
 
 install: install-backend install-frontend
 
@@ -76,12 +76,10 @@ run: install-backend install-frontend
 	@echo "Starting backend in the background..."
 	(cd $(BACKEND_DIR) && $(VENV_BIN)/uvicorn app.main:app --reload --port 8000 >/dev/null 2>&1 &) ; cd $(FRONTEND_DIR) && npm run dev -- --host 0.0.0.0
 
-test-fraude:
-	cd $(BACKEND_DIR) && $(VENV_BIN)/python test_fraude.py
+test-backend:
+	cd $(BACKEND_DIR) && $(VENV_BIN)/pytest tests/
 
-# Status local supplies the URL/key; no remote/linked option is supported.
-hu23-identity-fixtures:
-	@$(BACKEND_DIR)/$(VENV_BIN)/python $(BACKEND_DIR)/scripts/hu23_identity_fixtures.py
+test-frontend:
+	cd $(FRONTEND_DIR) && npm test
 
-hu23-local-reset:
-	@$(BACKEND_DIR)/$(VENV_BIN)/python $(BACKEND_DIR)/scripts/hu23_local_reset.py
+test: test-backend test-frontend

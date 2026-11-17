@@ -9,15 +9,19 @@ frontend/.env
 backend/ .env
 .env
 .env.local
+frontend/.env.local
+.venv/
+**/.venv/
+**/venv/
 supabase/functions/.env.local
 supabase/.env
 supabase/.temp/
-
 
 # Dependencies
 node_modules/
 frontend/node_modules/
 frontend/.oxlintrc.json
+
 # Build output
 frontend/dist
 # Agent worktrees and local server logs

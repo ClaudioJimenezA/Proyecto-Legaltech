@@ -17,3 +17,9 @@ supabase/.temp/
 # Dependencies
 node_modules/
 frontend/node_modules/
+
+# Agent worktrees and local server logs
+.claude/worktrees/
+backend/uvicorn.log
+
+backend/vercel.json

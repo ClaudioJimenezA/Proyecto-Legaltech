@@ -29,7 +29,7 @@ VENV_BIN := .venv/bin
 PYTHON := python3
 endif
 
-.PHONY: all help install install-backend install-frontend run-backend run-frontend run test test-backend test-frontend
+.PHONY: all help install install-backend install-frontend run-backend run-frontend run stop test test-backend test-frontend
 
 all: run
 
@@ -41,6 +41,7 @@ help:
 	@echo "  make run-backend       - Iniciar servidor FastAPI (puerto 8000)"
 	@echo "  make run-frontend      - Iniciar servidor Vite (puerto 5173)"
 	@echo "  make run               - Iniciar backend y frontend en simultaneo"
+	@echo "  make stop              - Detener el servidor backend en segundo plano"
 	@echo "  make test-backend      - Ejecutar pruebas pytest (Tier 1)"
 	@echo "  make test-frontend     - Ejecutar pruebas vitest en frontend"
 	@echo "  make test              - Ejecutar todas las pruebas"
@@ -67,14 +68,23 @@ install-frontend:
 	cd $(FRONTEND_DIR) && npm install
 
 run-backend:
-	cd $(BACKEND_DIR) && $(VENV_BIN)/uvicorn app.main:app --reload --port 8000
+	cd $(BACKEND_DIR) && $(VENV_BIN)/uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 run-frontend:
 	cd $(FRONTEND_DIR) && npm run dev -- --host 0.0.0.0
 
-run: install-backend install-frontend
-	@echo "Starting backend in the background..."
-	(cd $(BACKEND_DIR) && $(VENV_BIN)/uvicorn app.main:app --reload --port 8000 >/dev/null 2>&1 &) ; cd $(FRONTEND_DIR) && npm run dev -- --host 0.0.0.0
+run:
+	@echo "Levantando backend FastAPI en segundo plano (puerto 8000)..."
+	@(cd $(BACKEND_DIR) && $(VENV_BIN)/uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 > uvicorn.log 2>&1 & echo $$! > .backend.pid)
+	@echo "Levantando frontend Vite (puerto 5173)..."
+	@cd $(FRONTEND_DIR) && npm run dev -- --host 0.0.0.0
+
+stop:
+	@echo "Deteniendo servidor backend..."
+	@-kill `cat $(BACKEND_DIR)/.backend.pid 2>/dev/null` 2>/dev/null || true
+	@-pkill -f "uvicorn app.main:app" 2>/dev/null || true
+	@-rm -f $(BACKEND_DIR)/.backend.pid 2>/dev/null || true
+	@echo "Listo."
 
 test-backend:
 	cd $(BACKEND_DIR) && $(VENV_BIN)/pytest tests/

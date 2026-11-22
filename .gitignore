@@ -1,21 +1,26 @@
+# References (context only)
 arquitecture_reference/
 personal_knowledge_base/
 reference_templates/
+
+# Environment files
+*.env
+*.env.local
 .env
+.env.local
+backend/.env
+frontend/.env
+supabase/.env
+supabase/functions/.env.local
+supabase/.temp/
 frontend/.env.local
 backend/.venv/
 backend/venv/
-frontend/.env
-backend/ .env
-.env
-.env.local
-frontend/.env.local
+
+# Virtual environments
 .venv/
 **/.venv/
 **/venv/
-supabase/functions/.env.local
-supabase/.env
-supabase/.temp/
 
 # Dependencies
 node_modules/
@@ -23,9 +28,19 @@ frontend/node_modules/
 frontend/.oxlintrc.json
 
 # Build output
-frontend/dist
-# Agent worktrees and local server logs
-.claude/worktrees/
-backend/uvicorn.log
+frontend/dist/
+dist/
 
-backend/vercel.json
+# Python cache & tests
+__pycache__/
+**/*__pycache__*
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Logs & temporary files
+*.log
+*.pid
+.backend.pid
+backend/uvicorn.log
+.claude/worktrees/

@@ -251,7 +251,7 @@ export default function TelemetryFeed({
                         title="Cargar este evento en el Motor de Desconflicto SOC para verificar cruce ±2 min"
                       >
                         <Radar className="w-3.5 h-3.5 text-indigo-600" />
-                        Probar Cruce en Consola SOC (±2 min)
+                        Comprobar Cruce en Motor de Desconflicto (±2 min)
                       </button>
                     )}
                   </div>

@@ -48,6 +48,8 @@ export default function LiveLoggerWorkspace({
     fetchHistory,
     executeMatch,
     loadCertificate,
+    clearHistory,
+    deleteQuery,
   } = useDeconflictionSearch();
 
   const [subTab, setSubTab] = useState(
@@ -81,7 +83,7 @@ export default function LiveLoggerWorkspace({
   }, [activeAgreement?.id, fetchLogs, fetchHistory]);
 
   const handleSimulateSiemFromLog = (logEntry) => {
-    setPrefilledAlarm(logEntry);
+    setPrefilledAlarm({ log: logEntry, nonce: Date.now() });
     setSubTab('soc_deconfliction');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -175,37 +177,44 @@ export default function LiveLoggerWorkspace({
           )}
         </div>
 
-        {/* Selector de Consola: Pentester vs Operador SOC */}
-        <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 self-start lg:self-center shrink-0">
-          <button
-            type="button"
-            onClick={() => setSubTab('pentester_console')}
-            className={`px-3.5 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
-              subTab === 'pentester_console'
-                ? 'bg-indigo-600 text-white shadow'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <Terminal className="w-4 h-4" />
-            Consola Pentester (Live Logger)
-          </button>
-          <button
-            type="button"
-            onClick={() => setSubTab('soc_deconfliction')}
-            className={`px-3.5 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
-              subTab === 'soc_deconfliction'
-                ? 'bg-emerald-600 text-white shadow'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <Radar className="w-4 h-4" />
-            Desconflicto SIEM / ANCI (PoC Cliente)
-          </button>
-        </div>
+        {/* Selector de Consola: Auditor ve ambas; Cliente PoC solo ve Desconflicto + Bitácora */}
+        {activeRole === 'auditor' ? (
+          <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 self-start lg:self-center shrink-0">
+            <button
+              type="button"
+              onClick={() => setSubTab('pentester_console')}
+              className={`px-3.5 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
+                subTab === 'pentester_console'
+                  ? 'bg-indigo-600 text-white shadow'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Terminal className="w-4 h-4" />
+              Consola Pentester (Live Logger)
+            </button>
+            <button
+              type="button"
+              onClick={() => setSubTab('soc_deconfliction')}
+              className={`px-3.5 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
+                subTab === 'soc_deconfliction'
+                  ? 'bg-emerald-600 text-white shadow'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Radar className="w-4 h-4" />
+              Desconflicto SIEM / ANCI (±2 min)
+            </button>
+          </div>
+        ) : (
+          <div className="px-3.5 py-2 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs font-bold flex items-center gap-2 self-start lg:self-center shrink-0">
+            <Radar className="w-4 h-4 text-emerald-600" />
+            Vista Cliente PoC: Desconflicto SIEM/ANCI y Bitácora
+          </div>
+        )}
       </div>
 
-      {/* Alerta Emergente Break-Glass si se acaba de registrar un hallazgo crítico */}
-      {lastBreakGlassAlert && (
+      {/* Alerta Emergente Break-Glass (visible únicamente para el Auditor Lead) */}
+      {activeRole === 'auditor' && lastBreakGlassAlert && (
         <div className="p-4 bg-rose-900 text-white rounded-xl shadow-lg border-2 border-rose-400 flex items-start justify-between gap-4">
           <div className="flex items-start gap-3 text-xs">
             <AlertOctagon className="w-6 h-6 text-rose-300 shrink-0 mt-0.5 animate-pulse" />
@@ -229,8 +238,8 @@ export default function LiveLoggerWorkspace({
         </div>
       )}
 
-      {/* Advertencias Forenses No Bloqueantes al Registrar Eventos con Desvío de RoE */}
-      {lastScopeWarnings && lastScopeWarnings.length > 0 && (
+      {/* Advertencias Forenses No Bloqueantes al Registrar Eventos con Desvío de RoE (solo Auditor) */}
+      {activeRole === 'auditor' && lastScopeWarnings && lastScopeWarnings.length > 0 && (
         <div
           className={`p-4 rounded-xl shadow border-2 flex items-start justify-between gap-4 text-xs ${
             lastScopeWarnings.some((w) => w.severity === 'CRITICAL')
@@ -275,8 +284,8 @@ export default function LiveLoggerWorkspace({
         </div>
       )}
 
-      {/* Vista 1: Consola de Registro del Pentester + Bitácora en Vivo */}
-      {subTab === 'pentester_console' && (
+      {/* Vista 1: Consola de Registro del Pentester + Bitácora en Vivo (solo Auditor) */}
+      {activeRole === 'auditor' && subTab === 'pentester_console' && (
         <div className="space-y-6">
           <QuickLogForm
             agreement={activeAgreement}
@@ -296,8 +305,8 @@ export default function LiveLoggerWorkspace({
         </div>
       )}
 
-      {/* Vista 2: Consola del Operador SOC / Desconflicto ANCI + Bitácora de Referencia */}
-      {subTab === 'soc_deconfliction' && (
+      {/* Vista 2: Consola de Desconflicto SIEM/ANCI (PoC Cliente) + Bitácora de Referencia */}
+      {(activeRole !== 'auditor' || subTab === 'soc_deconfliction') && (
         <div className="space-y-6">
           <DeconflictionPanel
             agreement={activeAgreement}
@@ -309,6 +318,8 @@ export default function LiveLoggerWorkspace({
             onExecuteMatch={executeMatch}
             onLoadCertificate={loadCertificate}
             onCloseCertificate={closeCertificate}
+            onClearHistory={() => activeAgreement && clearHistory(activeAgreement.id)}
+            onDeleteQuery={deleteQuery}
             loading={deconflictionLoading}
             error={deconflictionError}
           />

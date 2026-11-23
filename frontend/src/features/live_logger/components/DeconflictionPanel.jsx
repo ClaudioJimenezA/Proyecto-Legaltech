@@ -3,6 +3,8 @@ import {
   AlertOctagon,
   AlertTriangle,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Clock,
   Download,
   FileBadge,
@@ -13,6 +15,7 @@ import {
   ShieldAlert,
   ShieldCheck,
   Sparkles,
+  Trash2,
   X,
 } from 'lucide-react';
 import {
@@ -36,9 +39,12 @@ export default function DeconflictionPanel({
   onExecuteMatch,
   onLoadCertificate,
   onCloseCertificate,
+  onClearHistory,
+  onDeleteQuery,
   loading = false,
   error = null,
 }) {
+  const [confirmClearModal, setConfirmClearModal] = useState(false);
   const [incidentTimeLocal, setIncidentTimeLocal] = useState(() => toDatetimeLocal());
   const [observedIp, setObservedIp] = useState(
     agreement?.auditor_source_ips?.[0] || '181.43.22.10'
@@ -46,17 +52,23 @@ export default function DeconflictionPanel({
   const [targetedAsset, setTargetedAsset] = useState(
     agreement?.target_assets?.[0] || 'api.cliente.cl'
   );
-  const [ticketRef, setTicketRef] = useState('INC-2026-0842');
+  const [ticketRef, setTicketRef] = useState('');
+  const [prefillNotice, setPrefillNotice] = useState(null);
+  const [showHistory, setShowHistory] = useState(false);
 
   useEffect(() => {
-    if (prefilledAlarm) {
-      const baseTs = new Date(prefilledAlarm.started_at || Date.now());
+    const logEntry = prefilledAlarm?.log || prefilledAlarm;
+    if (logEntry && logEntry.started_at) {
+      const baseTs = new Date(logEntry.started_at);
       // Simular +35 segundos de desfase de reloj NTP entre el pentester y el SIEM
       const driftedTs = new Date(baseTs.getTime() + 35 * 1000);
       setIncidentTimeLocal(toDatetimeLocal(driftedTs));
-      setObservedIp(prefilledAlarm.source_ip || '181.43.22.10');
-      setTargetedAsset(prefilledAlarm.target_host || 'api.cliente.cl');
-      setTicketRef(`INC-SOC-${Math.floor(1000 + Math.random() * 9000)}`);
+      setObservedIp(logEntry.source_ip || '181.43.22.10');
+      setTargetedAsset(logEntry.target_host || 'api.cliente.cl');
+      setTicketRef('');
+      setPrefillNotice(
+        `Campos rellenados desde el registro de bitácora (${logEntry.source_ip} → ${logEntry.target_host}, +35s NTP simulado). Presione "Ejecutar Cruce" para verificar.`
+      );
     }
   }, [prefilledAlarm]);
 
@@ -160,13 +172,17 @@ export default function DeconflictionPanel({
       ? new Date(incidentTimeLocal).toISOString()
       : new Date().toISOString();
 
+    const effectiveTicketRef =
+      ticketRef.trim() || `LEX-SOC-${Math.floor(1000 + Math.random() * 9000)}`;
+
     await onExecuteMatch({
       agreement_id: agreement.id,
       incident_timestamp: isoTimestamp,
       observed_attacker_ip: observedIp.trim(),
       targeted_asset: targetedAsset.trim(),
-      internal_ticket_ref: ticketRef.trim() || null,
+      internal_ticket_ref: effectiveTicketRef,
     });
+    setPrefillNotice(null);
   };
 
   const handleDownloadCertificateJson = (cert) => {
@@ -251,6 +267,19 @@ export default function DeconflictionPanel({
             </div>
           </div>
 
+          {prefillNotice && (
+            <div className="p-3 bg-indigo-50 border border-indigo-200 text-indigo-900 text-xs rounded-lg flex items-center justify-between gap-2">
+              <span className="font-medium">ℹ️ {prefillNotice}</span>
+              <button
+                type="button"
+                onClick={() => setPrefillNotice(null)}
+                className="text-indigo-500 hover:text-indigo-800 font-bold"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+
           {error && (
             <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-lg">
               ⚠️ {error}
@@ -302,13 +331,13 @@ export default function DeconflictionPanel({
 
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">
-                N° Ticket Interno SOC / CSIRT
+                N° Ticket Externo SOC / CSIRT <span className="font-normal text-slate-400">(Opcional)</span>
               </label>
               <input
                 type="text"
                 value={ticketRef}
                 onChange={(e) => setTicketRef(e.target.value)}
-                placeholder="INC-2026-0842"
+                placeholder="Vacío = autogenerado (LEX-SOC-...)"
                 className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs font-mono"
               />
             </div>
@@ -395,6 +424,8 @@ export default function DeconflictionPanel({
                     ? 'Registro de Telemetría Correlacionado (Prueba Autorizada Art. 2° Ley 21.459)'
                     : matchResult.resolution === 'INDETERMINATE'
                     ? 'Registro de Telemetría Correlacionado (Requiere Validación Operativa con PoC)'
+                    : matchResult.matched_log?.is_critical_finding
+                    ? '🚨 Hallazgo Crítico Break-Glass Correlacionado (Protocolo de Emergencia Cláusula 7ª RoE)'
                     : 'Evidencia Forense Correlacionada — Exceso de Mandato / Fuera de Alcance (Art. 1° Ley 21.459)'}
                 </span>
                 <ActivityTypeBadge type={matchResult.matched_log.activity_type} />
@@ -443,58 +474,164 @@ export default function DeconflictionPanel({
         </div>
       )}
 
-      {/* Historial de Consultas de Desconflicto del SOC */}
+      {/* Historial Plegable de Consultas de Desconflicto */}
       <div className="bg-white rounded-xl shadow border border-slate-200 overflow-hidden">
-        <div className="px-5 py-3.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-          <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
+        <div className="px-5 py-3.5 bg-slate-50 flex flex-wrap items-center justify-between gap-2">
+          <button
+            type="button"
+            onClick={() => setShowHistory((prev) => !prev)}
+            className="flex items-center gap-2 text-left hover:opacity-80 transition-opacity"
+          >
             <History className="w-4 h-4 text-indigo-600" />
-            Historial de Consultas de Desconflicto SOC ({history.length})
-          </h4>
+            <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">
+              Historial de Consultas de Desconflicto ({history.length})
+            </h4>
+            <span className="inline-flex items-center gap-1 text-xs font-bold text-indigo-700 ml-2">
+              {showHistory ? (
+                <>
+                  Ocultar <ChevronUp className="w-4 h-4" />
+                </>
+              ) : (
+                <>
+                  Desplegar <ChevronDown className="w-4 h-4" />
+                </>
+              )}
+            </span>
+          </button>
+
+          {history.length > 0 && onClearHistory && (
+            <button
+              type="button"
+              onClick={() => setConfirmClearModal(true)}
+              className="px-3 py-1 bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-300 rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition-colors"
+              title="Limpia las consultas de prueba del motor sin borrar la Bitácora Inmutable del Pentester"
+            >
+              <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+              Resetear Historial de Pruebas
+            </button>
+          )}
         </div>
 
-        {!history.length ? (
-          <div className="p-8 text-center text-xs text-slate-400">
-            Aún no se han ejecutado consultas de desconflicto para este acuerdo RoE.
-          </div>
-        ) : (
-          <div className="divide-y divide-slate-200">
-            {history.map((item) => (
-              <div
-                key={item.id}
-                className="p-4 hover:bg-slate-50 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
-              >
-                <div className="space-y-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <DeconflictionResolutionBadge resolution={item.resolution} short />
-                    <span className="font-mono font-bold text-slate-900">
-                      Ticket: {item.internal_ticket_ref || 'S/N'}
-                    </span>
-                    <span className="text-slate-400">|</span>
-                    <span className="font-mono text-slate-700">
-                      IP Observada: <strong>{item.observed_attacker_ip}</strong> →{' '}
-                      <strong>{item.targeted_asset}</strong>
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-500 font-mono flex items-center gap-1.5">
-                    <Clock className="w-3 h-3" />
-                    Alarma SIEM: {new Date(item.incident_timestamp).toLocaleString()} | Consultada:{' '}
-                    {new Date(item.created_at).toLocaleString()}
-                  </p>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => onLoadCertificate(item.id)}
-                  className="px-3 py-1.5 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-800 border border-slate-300 rounded-lg font-bold text-xs flex items-center gap-1.5 shrink-0 transition-colors"
-                >
-                  <FileBadge className="w-3.5 h-3.5 text-indigo-600" />
-                  Comprobante ANCI
-                </button>
+        {showHistory && (
+          <div className="border-t border-slate-200">
+            {!history.length ? (
+              <div className="p-8 text-center text-xs text-slate-400">
+                Aún no se han ejecutado consultas de desconflicto para este acuerdo RoE.
               </div>
-            ))}
+            ) : (
+              <div className="divide-y divide-slate-200">
+                {history.map((item) => (
+                  <div
+                    key={item.id}
+                    className="p-4 hover:bg-slate-50 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
+                  >
+                    <div className="space-y-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <DeconflictionResolutionBadge resolution={item.resolution} short />
+                        <span className="font-mono font-bold text-slate-900">
+                          Ticket: {item.internal_ticket_ref || 'S/N'}
+                        </span>
+                        <span className="text-slate-400">|</span>
+                        <span className="font-mono text-slate-700">
+                          IP Observada: <strong>{item.observed_attacker_ip}</strong> →{' '}
+                          <strong>{item.targeted_asset}</strong>
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 font-mono flex items-center gap-1.5">
+                        <Clock className="w-3 h-3" />
+                        Alarma SIEM: {new Date(item.incident_timestamp).toLocaleString()} | Consultada:{' '}
+                        {new Date(item.created_at).toLocaleString()}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => onLoadCertificate(item.id)}
+                        className="px-3 py-1.5 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-800 border border-slate-300 rounded-lg font-bold text-xs flex items-center gap-1.5 transition-colors"
+                      >
+                        <FileBadge className="w-3.5 h-3.5 text-indigo-600" />
+                        Comprobante ANCI
+                      </button>
+                      {onDeleteQuery && (
+                        <button
+                          type="button"
+                          onClick={() => onDeleteQuery(item.id)}
+                          className="p-1.5 bg-white hover:bg-rose-50 text-slate-400 hover:text-rose-700 border border-slate-200 hover:border-rose-300 rounded-lg transition-colors"
+                          title="Eliminar esta consulta de prueba del historial"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>
+
+      {/* Modal de Confirmación para Resetear el Historial de Consultas sin perder la Bitácora */}
+      {confirmClearModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/70 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-300 max-w-md w-full p-6 space-y-4 text-xs text-slate-800">
+            <div className="flex items-start justify-between border-b border-slate-200 pb-3">
+              <div className="flex items-center gap-2 text-rose-700 font-black text-sm">
+                <Trash2 className="w-5 h-5" />
+                Resetear Historial de Consultas de Desconflicto
+              </div>
+              <button
+                type="button"
+                onClick={() => setConfirmClearModal(false)}
+                className="p-1 text-slate-400 hover:text-slate-700"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="leading-relaxed text-slate-600">
+              Esta acción limpiará las <strong>{history.length} consultas/simulaciones</strong> del
+              Motor de Desconflicto para que no ensucien el Expediente Final de Cierre ANCI.
+            </p>
+            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-950 font-medium">
+              ✅ <strong>Resguardo Forense:</strong> La{' '}
+              <strong>Bitácora de Telemetría Inmutable en Vivo</strong> (los registros sellados con
+              SHA-256 del Pentester) <strong>NO se borra</strong> y permanece 100% intacta.
+            </div>
+
+            <div className="flex flex-wrap items-center justify-end gap-2 pt-2 border-t border-slate-200">
+              <button
+                type="button"
+                onClick={() => {
+                  handleExportSocBriefingJson();
+                }}
+                className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg font-bold flex items-center gap-1.5"
+              >
+                <Download className="w-3.5 h-3.5" />
+                Respaldar JSON Primero
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmClearModal(false)}
+                className="px-3 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-lg font-bold"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  await onClearHistory();
+                  setConfirmClearModal(false);
+                }}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg font-bold shadow"
+              >
+                Confirmar Reset
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal del Comprobante Digital de Desconflicto para la ANCI */}
       {activeCertificate && (
@@ -650,13 +787,21 @@ export default function DeconflictionPanel({
               </div>
 
               <div className="p-3.5 bg-white rounded-xl border border-slate-200 space-y-1">
-                <span className="text-[11px] font-bold uppercase text-emerald-700">
-                  Registro de Auditoría Correlacionado (±2 min)
+                <span
+                  className={`text-[11px] font-bold uppercase ${
+                    activeCertificate.anci_early_warning_dismissed
+                      ? 'text-emerald-700'
+                      : 'text-rose-700'
+                  }`}
+                >
+                  {activeCertificate.anci_early_warning_dismissed
+                    ? 'Registro de Auditoría Autorizado Correlacionado (±2 min)'
+                    : 'Evidencia en Bitácora Correlacionada (±2 min)'}
                 </span>
                 {activeCertificate.matched_telemetry_log ? (
                   <>
                     <p>
-                      <strong>ID Log Autorizado:</strong>{' '}
+                      <strong>ID Registro Log:</strong>{' '}
                       <span className="font-mono">
                         {activeCertificate.matched_telemetry_log.log_id}
                       </span>
@@ -664,6 +809,11 @@ export default function DeconflictionPanel({
                     <p>
                       <strong>Categoría:</strong>{' '}
                       {activeCertificate.matched_telemetry_log.activity_type}
+                      {activeCertificate.matched_telemetry_log.is_critical_finding && (
+                        <span className="ml-1.5 px-2 py-0.5 rounded bg-rose-100 text-rose-800 border border-rose-300 font-extrabold text-[10px]">
+                          HALLAZGO CRÍTICO BREAK-GLASS
+                        </span>
+                      )}
                     </p>
                     <p>
                       <strong>Herramienta:</strong>{' '}

@@ -47,6 +47,7 @@ def _row_to_log_candidate(row: dict[str, Any]) -> LogCandidate:
         tool_or_technique=str(row.get("tool_or_technique", "")),
         description=str(row.get("description", "")),
         record_hash=str(row.get("record_hash", "")).strip(),
+        is_critical_finding=bool(row.get("is_critical_finding", False)),
     )
 
 
@@ -195,6 +196,48 @@ def list_deconfliction_history(
     }
 
 
+@router.delete("/history/{agreement_id}")
+def clear_deconfliction_history(
+    agreement_id: str,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Clear deconfliction test/simulation queries for an agreement while preserving immutable assessment_logs."""
+    supabase = get_supabase_client()
+    existing_resp = (
+        supabase.table("deconfliction_queries")
+        .select("id")
+        .eq("agreement_id", agreement_id)
+        .execute()
+    )
+    existing_ids = [str(r["id"]) for r in (existing_resp.data or [])]
+    if existing_ids:
+        supabase.table("deconfliction_queries").delete().eq("agreement_id", agreement_id).execute()
+
+    return {
+        "agreement_id": agreement_id,
+        "deleted_count": len(existing_ids),
+        "preserved_immutable_telemetry_logs": True,
+        "message": (
+            f"Se eliminaron {len(existing_ids)} consultas del historial de desconflicto. "
+            f"La Bitácora de Telemetría Inmutable (assessment_logs) se mantiene íntegra."
+        ),
+    }
+
+
+@router.delete("/{query_id}")
+def delete_single_deconfliction_query(
+    query_id: str,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Delete a single deconfliction query (e.g. a hypothetical test simulation) from the history."""
+    supabase = get_supabase_client()
+    supabase.table("deconfliction_queries").delete().eq("id", query_id).execute()
+    return {
+        "deleted_query_id": query_id,
+        "preserved_immutable_telemetry_logs": True,
+    }
+
+
 @router.get("/{query_id}/certificate")
 def get_deconfliction_certificate(
     query_id: str,
@@ -262,12 +305,28 @@ def get_deconfliction_certificate(
             "activar el protocolo de notificación ante la ANCI."
         )
     else:
-        legal_determination = (
-            "NO EXIMIDO — ALERTA DE INTRUSIÓN O EXCESO DE MANDATO: El tráfico afectó a un activo "
-            "excluido / no autorizado (Art. 1° Ley N° 21.459) o proviene de un origen sin respaldo "
-            "válido en la bitácora del acuerdo RoE. Mantener contención defensiva y evaluar el reporte "
-            "obligatorio de Alerta Temprana (plazo máximo 3 horas) ante la ANCI (Art. 37 Ley N° 21.663)."
-        )
+        if matched_log_row and matched_log_row.get("is_critical_finding"):
+            legal_determination = (
+                "NO EXIMIDO — ALERTA CRÍTICA BREAK-GLASS CORRELACIONADA: El tráfico coincide con un "
+                "registro de la bitácora del auditor etiquetado como HALLAZGO CRÍTICO (Protocolo Break-Glass, "
+                "Cláusula 7ª RoE). Se ordena suspensión inmediata de maniobras sobre el vector, contención "
+                "defensiva coordinada con el PoC y evaluación de Alerta Temprana (3 horas) ante la ANCI "
+                "(Art. 37 Ley N° 21.663)."
+            )
+        elif matched_log_row:
+            legal_determination = (
+                "NO EXIMIDO — EXCESO DE MANDATO / ACTIVO FUERA DE ALCANCE (ART. 1° LEY N° 21.459): "
+                "Aunque existe un registro en la bitácora del auditor, el activo afectado se encuentra "
+                "excluido (Hard Deny List) o fuera de los activos autorizados (In-Scope) del contrato RoE. "
+                "Mantener contención defensiva y evaluar el reporte obligatorio ante la ANCI (Art. 37 Ley N° 21.663)."
+            )
+        else:
+            legal_determination = (
+                "NO EXIMIDO — ALERTA DE INTRUSIÓN EXTERNA NO AUTORIZADA: No existe coincidencia en la "
+                "bitácora del auditor para la IP y activo consultados. El tráfico debe tratarse como un "
+                "incidente de ciberseguridad real sujeto a contención inmediata y reporte de Alerta Temprana "
+                "(plazo máximo 3 horas) ante la ANCI (Art. 37 Ley N° 21.663)."
+            )
 
     return {
         "certificate_id": f"CERT-ANCI-{str(query_row['id'])[:8].upper()}",
@@ -322,6 +381,7 @@ def get_deconfliction_certificate(
                 "http_method": matched_log_row.get("http_method"),
                 "activity_type": matched_log_row.get("activity_type"),
                 "tool_or_technique": matched_log_row.get("tool_or_technique"),
+                "is_critical_finding": bool(matched_log_row.get("is_critical_finding", False)),
                 "record_sha256_hash": str(matched_log_row.get("record_hash", "")).strip(),
             }
             if matched_log_row

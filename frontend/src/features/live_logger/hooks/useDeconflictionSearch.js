@@ -77,6 +77,40 @@ export function useDeconflictionSearch() {
     }
   };
 
+  const clearHistory = async (agreementId) => {
+    if (!agreementId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      await deconflictionApi.clearHistory(agreementId);
+      setHistory([]);
+      setMatchResult(null);
+    } catch (err) {
+      const msg = formatApiError(err, 'Error al limpiar el historial de consultas de desconflicto');
+      setError(msg);
+      throw new Error(msg);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const deleteQuery = async (queryId) => {
+    if (!queryId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      await deconflictionApi.deleteQuery(queryId);
+      setHistory((prev) => prev.filter((item) => item.id !== queryId));
+      setMatchResult((prev) => (prev?.query?.id === queryId ? null : prev));
+    } catch (err) {
+      const msg = formatApiError(err, 'Error al eliminar la consulta de desconflicto');
+      setError(msg);
+      throw new Error(msg);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return {
     matchResult,
     clearMatchResult: () => setMatchResult(null),
@@ -88,5 +122,7 @@ export function useDeconflictionSearch() {
     fetchHistory,
     executeMatch,
     loadCertificate,
+    clearHistory,
+    deleteQuery,
   };
 }

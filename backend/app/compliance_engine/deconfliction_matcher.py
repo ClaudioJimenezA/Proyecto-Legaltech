@@ -43,6 +43,7 @@ class LogCandidate:
     tool_or_technique: str = ""
     description: str = ""
     record_hash: str = ""
+    is_critical_finding: bool = False
 
 
 @dataclass(frozen=True)
@@ -377,6 +378,30 @@ def match_incident_against_logs(
         ticket_clause = (
             f" (Ticket SOC: {alarm.internal_ticket_ref})" if alarm.internal_ticket_ref else ""
         )
+
+        # Critical Break-Glass finding logged by pentester -> trigger critical alert / ANCI evaluation
+        if matched.is_critical_finding:
+            justification = (
+                f"ALERTA CRÍTICA BREAK-GLASS CORRELACIONADA{ticket_clause} (CLÁUSULA 7ª RoE / LEY N° 21.663): "
+                f"El tráfico desde {alarm.observed_attacker_ip} hacia '{alarm.targeted_asset}' coincide "
+                f"espaciotemporalmente (desfase: {delta_sec:.1f}s) con el registro de bitácora ID {matched.log_id} "
+                f"[{matched.activity_type} - {matched.tool_or_technique}], sellado con SHA-256 "
+                f"{matched.record_hash[:16]}..., el cual fue marcado como HALLAZGO CRÍTICO (PROTOCOLO BREAK-GLASS). "
+                f"Debido al impacto crítico detectado sobre el activo, NO procede archivar la alerta como inocua: "
+                f"se requiere contención inmediata, suspensión de post-explotación, notificación de emergencia al PoC "
+                f"y evaluación del reporte de Alerta Temprana ante la ANCI (3 horas, Art. 37 Ley N° 21.663)."
+            )
+            return DeconflictionMatchResult(
+                resolution=DeconflictionResolution.UNMATCHED_SUSPICIOUS,
+                matched_log_id=matched.log_id,
+                matched_log=matched,
+                time_delta_seconds=round(delta_sec, 2),
+                ip_matched=ip_is_enrolled,
+                asset_matched=True,
+                time_window_matched=within_contract_window,
+                anci_report_required=True,
+                justification_notes=justification,
+            )
 
         # Operational/administrative deviation on an explicitly permitted asset -> INDETERMINATE
         if not ip_is_enrolled or not within_contract_window:

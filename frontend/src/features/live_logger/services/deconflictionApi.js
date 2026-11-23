@@ -41,4 +41,14 @@ export const deconflictionApi = {
     const { data } = await apiClient.get(`/${queryId}/certificate`);
     return data;
   },
+
+  async clearHistory(agreementId) {
+    const { data } = await apiClient.delete(`/history/${agreementId}`);
+    return data;
+  },
+
+  async deleteQuery(queryId) {
+    const { data } = await apiClient.delete(`/${queryId}`);
+    return data;
+  },
 };

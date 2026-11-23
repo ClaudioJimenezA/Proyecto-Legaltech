@@ -92,6 +92,15 @@ def build_csaf_advisory_json(
     confirmed_deconflictions = sum(
         1 for q in deconfliction_queries if q.get("resolution") == "CONFIRMED_AUTHORIZED"
     )
+    indeterminate_deconflictions = sum(
+        1 for q in deconfliction_queries if q.get("resolution") == "INDETERMINATE"
+    )
+    suspicious_deconflictions = sum(
+        1 for q in deconfliction_queries if q.get("resolution") == "UNMATCHED_SUSPICIOUS"
+    )
+    critical_break_glass_logs = sum(
+        1 for l in logs if l.get("is_critical_finding")
+    )
 
     core_package: dict[str, Any] = {
         "document": {
@@ -165,8 +174,24 @@ def build_csaf_advisory_json(
             "art2_ley21459_evaluation": art2_compliance,
             "telemetry_and_deconfliction_summary": {
                 "total_assessment_logs": len(logs),
+                "critical_break_glass_logs_count": critical_break_glass_logs,
                 "total_soc_deconfliction_queries": len(deconfliction_queries),
                 "false_positive_anci_reports_prevented": confirmed_deconflictions,
+                "indeterminate_manual_verifications": indeterminate_deconflictions,
+                "suspicious_or_critical_alerts_detected": suspicious_deconflictions,
+                "deconfliction_audit_trail": [
+                    {
+                        "query_id": str(q.get("id")),
+                        "internal_ticket_ref": q.get("internal_ticket_ref"),
+                        "incident_timestamp": q.get("incident_timestamp"),
+                        "observed_attacker_ip": str(q.get("observed_attacker_ip")),
+                        "targeted_asset": q.get("targeted_asset"),
+                        "resolution": q.get("resolution"),
+                        "matched_log_id": str(q.get("matched_log_id")) if q.get("matched_log_id") else None,
+                        "justification_notes": q.get("justification_notes"),
+                    }
+                    for q in deconfliction_queries
+                ],
             },
             "ley21719_data_protection": {
                 "data_purge_deadline_business_days": meta.get("data_purge_days", 14),

@@ -61,6 +61,19 @@ const TACTICAL_PRESETS = [
       'Ejecución de prueba de concepto mínima para demostrar ejecución remota de comandos (whoami / hostname) sin extracción de datos.',
     critical: true,
   },
+  {
+    id: 'out_of_scope_probe',
+    label: '5. Simular Desvío Fuera de Alcance',
+    activityType: 'VULN_PROBE',
+    port: 5432,
+    method: 'GET',
+    endpoint: '/admin/db-console',
+    tool: 'Nmap / Acceso a Host Excluido (Out-of-Scope)',
+    description:
+      'Sondeo sobre activo excluido en la Hard Deny List para verificar detección de exceso de mandato en el Motor de Desconflicto.',
+    critical: false,
+    useExcludedAsset: true,
+  },
 ];
 
 function toDatetimeLocalNow() {
@@ -107,6 +120,11 @@ export default function QuickLogForm({ agreement, onCreateLog, loading }) {
     setToolOrTechnique(preset.tool);
     setDescription(preset.description);
     setIsCriticalFinding(preset.critical);
+    if (preset.useExcludedAsset) {
+      setTargetHost(agreement?.excluded_assets?.[0] || 'db-prod.cliente.cl');
+    } else if (agreement?.target_assets?.[0]) {
+      setTargetHost(agreement.target_assets[0]);
+    }
     setStartedAtLocal(toDatetimeLocalNow());
   };
 

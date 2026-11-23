@@ -349,3 +349,43 @@ def test_ip_substring_does_not_falsely_authorize_different_ip():
 
     assert result.resolution == DeconflictionResolution.UNMATCHED_SUSPICIOUS
     assert result.anci_report_required is True
+
+
+def test_critical_break_glass_log_triggers_unmatched_suspicious_alert():
+    """A log marked as is_critical_finding (Break-Glass) must trigger UNMATCHED_SUSPICIOUS & ANCI evaluation."""
+    base_time = datetime(2026, 11, 19, 15, 40, 0, tzinfo=timezone.utc)
+    critical_log = LogCandidate(
+        log_id="log-crit-001",
+        agreement_id="roe-uuid-001",
+        started_at=base_time,
+        ended_at=None,
+        source_ip="181.43.22.10",
+        target_host="api.cliente.cl",
+        target_port=443,
+        target_endpoint="/api/v1/admin/export",
+        http_method="POST",
+        injected_header_token="LEXPLOIT-2026-TOKEN",
+        activity_type="EXPLOIT_POC",
+        tool_or_technique="PoC Controlada SSRF / RCE",
+        description="Ejecucion remota de comandos Break-Glass.",
+        record_hash="b" * 64,
+        is_critical_finding=True,
+    )
+
+    alarm = IncidentAlarmInput(
+        agreement_id="roe-uuid-001",
+        incident_timestamp=base_time + timedelta(seconds=35),
+        observed_attacker_ip="181.43.22.10",
+        targeted_asset="api.cliente.cl",
+    )
+    result = match_incident_against_logs(
+        alarm,
+        [critical_log],
+        authorized_auditor_ips=["181.43.22.10"],
+        target_assets=["api.cliente.cl"],
+    )
+
+    assert result.resolution == DeconflictionResolution.UNMATCHED_SUSPICIOUS
+    assert result.anci_report_required is True
+    assert result.matched_log_id == "log-crit-001"
+    assert "BREAK-GLASS" in result.justification_notes

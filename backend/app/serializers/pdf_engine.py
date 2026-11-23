@@ -524,10 +524,39 @@ _HTML_REPORT_TEMPLATE = """<!DOCTYPE html>
 
   <h2>3. Resumen de Telemetría en Vivo y Desconflicto SOC / ANCI (Ley N° 21.663)</h2>
   <div class="card">
-    <strong>Pruebas Registradas en Bitácora Inmutable:</strong> {{ logs | length }} eventos sellados con SHA-256.<br/>
-    <strong>Consultas de Desconflicto Ejecutadas por el SOC:</strong> {{ deconfliction_queries | length }} cruces (±2 min NTP).<br/>
-    <strong>Falsos Positivos Descartados antes de Reportar a la ANCI:</strong> {{ confirmed_deconflictions }} alarmas SIEM archivadas.
+    <strong>Pruebas Registradas en Bitácora Inmutable:</strong> {{ logs | length }} eventos sellados con SHA-256 ({{ critical_logs_count }} marcados como Hallazgo Crítico Break-Glass).<br/>
+    <strong>Consultas de Desconflicto Ejecutadas:</strong> {{ deconfliction_queries | length }} cruces (±2 min NTP).<br/>
+    <strong>• Falsos Positivos Descartados (CONFIRMED_AUTHORIZED):</strong> {{ confirmed_deconflictions }} alarmas eximidas de reporte ANCI.<br/>
+    <strong>• Desvíos Operativos en Activos Permitidos (INDETERMINATE):</strong> {{ indeterminate_deconflictions }} consultas sujetas a validación con PoC.<br/>
+    <strong>• Alertas Críticas / Sospechosas / Break-Glass o Exceso de Alcance (UNMATCHED_SUSPICIOUS):</strong> {{ suspicious_deconflictions }} eventos que requieren contención y evaluación ANCI.
   </div>
+  {% if deconfliction_queries %}
+  <table>
+    <thead>
+      <tr>
+        <th>Ticket / Fecha Alarma</th>
+        <th>IP Observada → Activo</th>
+        <th>Dictamen Desconflicto</th>
+        <th>Log Correlacionado</th>
+        <th>Fundamento Técnico-Jurídico (Ley N° 21.459 / Ley N° 21.663)</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for q in deconfliction_queries %}
+      <tr>
+        <td class="mono">
+          <strong>{{ q.internal_ticket_ref or 'S/N' }}</strong><br/>
+          {{ q.incident_timestamp }}
+        </td>
+        <td class="mono">{{ q.observed_attacker_ip }} → <strong>{{ q.targeted_asset }}</strong></td>
+        <td><strong>{{ q.resolution }}</strong></td>
+        <td class="mono">{{ (q.matched_log_id | string)[:8] if q.matched_log_id else 'Sin Log' }}</td>
+        <td>{{ q.justification_notes }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
 
   <h2>4. Matriz de Hallazgos Técnicos, CVSS v3.1 y Ciclo de Remediación (Re-Testing)</h2>
   {% if vulnerabilities %}
@@ -863,6 +892,13 @@ def render_compliance_report_html(
     confirmed_deconflictions = sum(
         1 for q in deconfliction_queries if q.get("resolution") == "CONFIRMED_AUTHORIZED"
     )
+    indeterminate_deconflictions = sum(
+        1 for q in deconfliction_queries if q.get("resolution") == "INDETERMINATE"
+    )
+    suspicious_deconflictions = sum(
+        1 for q in deconfliction_queries if q.get("resolution") == "UNMATCHED_SUSPICIOUS"
+    )
+    critical_logs_count = sum(1 for l in logs if l.get("is_critical_finding"))
     return template.render(
         agreement=agreement,
         meta=meta,
@@ -871,6 +907,9 @@ def render_compliance_report_html(
         logs=logs,
         deconfliction_queries=deconfliction_queries,
         confirmed_deconflictions=confirmed_deconflictions,
+        indeterminate_deconflictions=indeterminate_deconflictions,
+        suspicious_deconflictions=suspicious_deconflictions,
+        critical_logs_count=critical_logs_count,
         package_sha256_hash=package_sha256_hash,
         generated_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
     )
@@ -917,12 +956,31 @@ def _build_pure_python_pdf_fallback(
         status_txt = "OK" if cond.get("passed") else "PENDIENTE"
         lines.append(f"  [{status_txt}] {cond.get('name')}: {cond.get('reason')}")
 
+    confirmed_cnt = sum(
+        1 for q in deconfliction_queries if q.get("resolution") == "CONFIRMED_AUTHORIZED"
+    )
+    indeterminate_cnt = sum(
+        1 for q in deconfliction_queries if q.get("resolution") == "INDETERMINATE"
+    )
+    suspicious_cnt = sum(
+        1 for q in deconfliction_queries if q.get("resolution") == "UNMATCHED_SUSPICIOUS"
+    )
+    critical_logs_cnt = sum(1 for l in logs if l.get("is_critical_finding"))
     lines.extend([
         "",
         "3. TELEMETRIA EN VIVO Y DESCONFLICTO SOC / ANCI (LEY N 21.663)",
         "----------------------------------------------------------------------",
-        f"Total Eventos en Bitacora Inmutable: {len(logs)}",
-        f"Consultas de Desconflicto SOC (+-2 min): {len(deconfliction_queries)}",
+        f"Total Eventos en Bitacora Inmutable: {len(logs)} (Criticos Break-Glass: {critical_logs_cnt})",
+        f"Consultas de Desconflicto (+-2 min): {len(deconfliction_queries)}",
+        f"  - Autorizadas / Eximidas ANCI (CONFIRMED_AUTHORIZED): {confirmed_cnt}",
+        f"  - Verificacion Manual PoC (INDETERMINATE): {indeterminate_cnt}",
+        f"  - Alertas Criticas / Sospechosas / Break-Glass (UNMATCHED_SUSPICIOUS): {suspicious_cnt}",
+    ])
+    for idx, q in enumerate(deconfliction_queries, 1):
+        lines.append(
+            f"  [{idx}] Ticket {q.get('internal_ticket_ref') or 'S/N'} | {q.get('observed_attacker_ip')} -> {q.get('targeted_asset')} | {q.get('resolution')}"
+        )
+    lines.extend([
         "",
         "4. MATRIZ DE VULNERABILIDADES CVSS v3.1 Y CICLO DE RE-TEST",
         "----------------------------------------------------------------------",

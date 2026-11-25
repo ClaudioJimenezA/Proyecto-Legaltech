@@ -45,11 +45,8 @@ export default function RoeDashboard() {
   const [activeRole, setActiveRole] = useState(() => {
     const saved = localStorage.getItem('lexploit_active_role');
     if (saved === 'client' || saved === 'auditor') return saved;
-    if (saved === 'soc') {
-      localStorage.setItem('lexploit_active_role', 'client');
-      return 'client';
-    }
-    return 'auditor';
+    localStorage.setItem('lexploit_active_role', 'client');
+    return 'client';
   });
 
   const handleRoleChange = (newRole) => {
@@ -268,7 +265,7 @@ export default function RoeDashboard() {
                   <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
                 </button>
 
-                {activeRole === 'auditor' && (
+                {activeRole === 'client' && (
                   <button
                     type="button"
                     onClick={() => setViewMode('create')}
@@ -336,7 +333,7 @@ export default function RoeDashboard() {
                   <div className="p-12 text-center text-slate-500 space-y-3">
                     <Shield className="w-10 h-10 mx-auto text-slate-300" />
                     <p className="text-sm font-medium">No hay acuerdos registrados todavía.</p>
-                    {activeRole === 'auditor' ? (
+                    {activeRole === 'client' ? (
                       <button
                         type="button"
                         onClick={() => setViewMode('create')}
@@ -346,7 +343,7 @@ export default function RoeDashboard() {
                       </button>
                     ) : (
                       <p className="text-xs text-slate-400">
-                        Cambie al rol Auditor Lead para redactar una propuesta.
+                        Cambie al rol Cliente PoC / Rep. Legal para proponer un nuevo contrato RoE.
                       </p>
                     )}
                   </div>
@@ -401,6 +398,23 @@ export default function RoeDashboard() {
                               {meta.testing_modality || 'Gray-Box'} | Token:{' '}
                               {item.traffic_header_token}
                             </p>
+                            {activeRole === 'client' &&
+                              Array.isArray(meta.revision_history) &&
+                              meta.revision_history.length > 0 &&
+                              !isItemSealed && (
+                                <div className="mt-2 p-2.5 bg-orange-50 border border-orange-300 rounded-lg text-xs text-orange-950">
+                                  <span className="font-bold text-orange-800">
+                                    Sugerencia del Auditor ({meta.revision_history.length}):
+                                  </span>{' '}
+                                  <span>
+                                    {
+                                      meta.revision_history[
+                                        meta.revision_history.length - 1
+                                      ]?.observations
+                                    }
+                                  </span>
+                                </div>
+                              )}
                           </div>
 
                           <div className="flex flex-wrap items-center gap-2 shrink-0">

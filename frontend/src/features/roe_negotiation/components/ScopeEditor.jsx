@@ -328,17 +328,37 @@ export default function ScopeEditor({ initialAgreement = null, onSaved, onCancel
         </div>
       </div>
 
-      {/* Historial de Reparos del Cliente si se esta editando */}
+      {/* Historial de Sugerencias / Reparos del Auditor si se esta editando */}
       {revisionHistory.length > 0 && (
-        <div className="mb-6 p-4 bg-orange-50 border border-orange-300 rounded-lg text-orange-900 text-xs space-y-2">
+        <div className="mb-6 p-4 bg-orange-50 border-2 border-orange-300 rounded-xl text-orange-900 text-xs space-y-2.5">
           <div className="font-bold flex items-center gap-2 text-sm">
             <MessageSquareWarning className="w-5 h-5 text-orange-600" />
-            Observaciones y Reparos Solicitados por el Cliente:
+            Sugerencias enviadas por el Auditor Lead ({revisionHistory.length}):
           </div>
           {revisionHistory.map((rev, idx) => (
-            <div key={idx} className="bg-white/80 p-2.5 rounded border border-orange-200">
-              <span className="font-bold">Versión v{rev.version} ({rev.requested_by}):</span>{' '}
-              <span>{rev.observations}</span>
+            <div
+              key={idx}
+              className="bg-white p-3 rounded-lg border border-orange-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2"
+            >
+              <div>
+                <span className="font-bold text-orange-950">
+                  Versión v{rev.version} ({rev.requested_by}):
+                </span>{' '}
+                <span className="text-slate-800">{rev.observations}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() =>
+                  setAdditionalStipulations((prev) =>
+                    prev
+                      ? `${prev}\n• Ajuste acordado con Auditor (v${rev.version}): ${rev.observations}`
+                      : `• Ajuste acordado con Auditor (v${rev.version}): ${rev.observations}`
+                  )
+                }
+                className="px-2.5 py-1 bg-orange-100 hover:bg-orange-200 text-orange-900 border border-orange-300 rounded-md text-[11px] font-bold shrink-0"
+              >
+                + Incorporar en Estipulaciones
+              </button>
             </div>
           ))}
         </div>
@@ -1056,10 +1076,10 @@ export default function ScopeEditor({ initialAgreement = null, onSaved, onCancel
             <div>
               <h3 className="text-sm font-bold text-indigo-950 flex items-center gap-2">
                 <Sliders className="w-4 h-4 text-indigo-600" />
-                7. Cláusulas Especiales Adicionales y Edición de Texto Libre (Sugerencias del Cliente)
+                7. Cláusulas Especiales Adicionales y Estipulaciones Acordadas
               </h3>
               <p className="text-[11px] text-indigo-800 mt-0.5">
-                Agregue cláusulas personalizadas o estipulaciones solicitadas por el Cliente. Se numeran automáticamente en la Tabla de Contenido y en el PDF.
+                Agregue cláusulas personalizadas o incorpore las sugerencias enviadas por el Auditor. Se numeran automáticamente en la Tabla de Contenido y en el PDF.
               </p>
             </div>
 
@@ -1168,13 +1188,13 @@ export default function ScopeEditor({ initialAgreement = null, onSaved, onCancel
 
           <div>
             <label className="block text-xs font-semibold text-indigo-950 mb-1">
-              Estipulaciones Particulares / Notas o Modificaciones de Texto Libre Solicitud del Cliente (Opcional)
+              Estipulaciones Particulares / Ajustes Acordados con el Auditor (Opcional)
             </label>
             <textarea
               rows={3}
               value={additionalStipulations}
               onChange={(e) => setAdditionalStipulations(e.target.value)}
-              placeholder="Escriba aquí cualquier modificación adicional, anexo específico o condición solicitada por el Cliente que no esté en los campos anteriores..."
+              placeholder="Escriba aquí cualquier modificación adicional, anexo específico o sugerencia incorporada del Auditor..."
               className="w-full px-3 py-2 bg-white border border-indigo-300 rounded-lg text-xs leading-relaxed"
             />
           </div>

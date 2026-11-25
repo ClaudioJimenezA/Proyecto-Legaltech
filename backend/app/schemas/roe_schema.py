@@ -149,6 +149,9 @@ class RoeCreateSchema(BaseModel):
     client_poc_id: Optional[UUID] = Field(
         None, description="UUID del usuario PoC (asignado automaticamente si se omite)"
     )
+    auditor_lead_id: Optional[UUID] = Field(
+        None, description="UUID del Auditor Lead (asignado automaticamente si se omite)"
+    )
     execution_start: datetime = Field(..., description="Inicio ventana autorizada UTC")
     execution_end: datetime = Field(..., description="Fin ventana autorizada UTC")
     target_assets: list[str] = Field(..., min_length=1, description="FQDNs, IPs o CIDRs In-Scope")
@@ -201,32 +204,45 @@ class RoeCreateSchema(BaseModel):
         if self.client_poc_id is None:
             self.client_poc_id = UUID("00000000-0000-0000-0000-000000000002")
 
+        if self.auditor_lead_id is None:
+            self.auditor_lead_id = UUID("00000000-0000-0000-0000-000000000001")
+
         return self
 
 
 class RoeRevisionRequestSchema(BaseModel):
-    """Client observations when returning a RoE to REVISION_REQUESTED."""
+    """Auditor observations/suggestions when returning a RoE to REVISION_REQUESTED."""
 
     observations: str = Field(..., min_length=5, max_length=2000)
 
 
 class RoeClientApproveSchema(BaseModel):
-    """Client approval & first digital signature payload."""
+    """Auditor technical approval & first digital signature payload."""
 
-    backup_confirmed: bool = Field(
-        ..., description="El cliente certifica que cuenta con respaldos previos verificados"
+    backup_confirmed: Optional[bool] = Field(
+        default=None,
+        description="Estado opcional de respaldos previos (se conserva el declarado por el cliente si se omite)",
     )
-    cloud_authorization_confirmed: bool = Field(
-        default=True, description="El cliente confirma autorizacion de infraestructura cloud"
+    cloud_authorization_confirmed: Optional[bool] = Field(
+        default=None,
+        description="Estado opcional de autorizacion cloud (se conserva el declarado por el cliente si se omite)",
     )
 
 
 class RoeSealSchema(BaseModel):
-    """Auditor counter-signature & SHA-256 cryptographic sealing payload."""
+    """Client counter-signature & SHA-256 cryptographic sealing payload."""
 
     activate_immediately: bool = Field(
         default=True,
         description="Si es True, habilita la transicion inmediata a ACTIVE tras el sellado",
+    )
+    backup_confirmed: Optional[bool] = Field(
+        default=None,
+        description="El cliente certifica que cuenta con respaldos previos verificados al sellar",
+    )
+    cloud_authorization_confirmed: Optional[bool] = Field(
+        default=None,
+        description="El cliente confirma autorizacion de infraestructura cloud al sellar",
     )
 
 

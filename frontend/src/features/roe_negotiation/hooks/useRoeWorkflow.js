@@ -99,7 +99,7 @@ export function useRoeWorkflow() {
       setAgreements((prev) => prev.map((a) => (a.id === id ? updated : a)));
       return updated;
     } catch (err) {
-      const msg = formatApiError(err, 'Error al enviar al cliente');
+      const msg = formatApiError(err, 'Error al enviar a revisión del auditor');
       setError(msg);
       throw new Error(msg);
     } finally {
@@ -141,11 +141,11 @@ export function useRoeWorkflow() {
     }
   };
 
-  const sealAgreement = async (id) => {
+  const sealAgreement = async (id, options = {}) => {
     setLoading(true);
     setError(null);
     try {
-      const res = await roeApi.sealAgreement(id);
+      const res = await roeApi.sealAgreement(id, options);
       setCurrentAgreement(res.agreement);
       setCompliance(res.art2_compliance);
       setAgreements((prev) => prev.map((a) => (a.id === id ? res.agreement : a)));

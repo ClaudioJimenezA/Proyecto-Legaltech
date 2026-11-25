@@ -57,18 +57,26 @@ export const roeApi = {
     return data;
   },
 
-  async clientApprove(id, { backupConfirmed, cloudAuthorizationConfirmed }) {
-    const { data } = await apiClient.post(`/${id}/client-approve`, {
-      backup_confirmed: backupConfirmed,
-      cloud_authorization_confirmed: cloudAuthorizationConfirmed,
-    });
+  async clientApprove(id, { backupConfirmed, cloudAuthorizationConfirmed } = {}) {
+    const payload = {};
+    if (backupConfirmed !== undefined) payload.backup_confirmed = backupConfirmed;
+    if (cloudAuthorizationConfirmed !== undefined) {
+      payload.cloud_authorization_confirmed = cloudAuthorizationConfirmed;
+    }
+    const { data } = await apiClient.post(`/${id}/client-approve`, payload);
     return data.agreement;
   },
 
-  async sealAgreement(id, { activateImmediately = true } = {}) {
-    const { data } = await apiClient.post(`/${id}/seal`, {
-      activate_immediately: activateImmediately,
-    });
+  async sealAgreement(
+    id,
+    { activateImmediately = true, backupConfirmed, cloudAuthorizationConfirmed } = {}
+  ) {
+    const payload = { activate_immediately: activateImmediately };
+    if (backupConfirmed !== undefined) payload.backup_confirmed = backupConfirmed;
+    if (cloudAuthorizationConfirmed !== undefined) {
+      payload.cloud_authorization_confirmed = cloudAuthorizationConfirmed;
+    }
+    const { data } = await apiClient.post(`/${id}/seal`, payload);
     return data;
   },
 

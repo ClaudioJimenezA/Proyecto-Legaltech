@@ -257,7 +257,13 @@ def create_roe_proposal(
     payload: RoeCreateSchema,
     current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> dict[str, Any]:
-    """Create a new RoE agreement in DRAFT state with Chilean legal party metadata."""
+    """Create a new RoE agreement in DRAFT state initiated by the Client PoC / Legal Rep."""
+    if current_user.role == "auditor":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo el Cliente PoC / Rep. Legal puede iniciar una nueva propuesta de contrato RoE.",
+        )
+
     token = payload.traffic_header_token or f"LXP-{secrets.token_hex(6).upper()}"
     org_id_str = str(payload.organization_id)
     _upsert_organization(org_id_str, payload.contract_metadata)
@@ -267,8 +273,8 @@ def create_roe_proposal(
         "title": payload.title,
         "current_status": RoeStatusEnum.DRAFT.value,
         "version": 1,
-        "client_poc_id": str(payload.client_poc_id),
-        "auditor_lead_id": current_user.user_id,
+        "client_poc_id": current_user.user_id,
+        "auditor_lead_id": str(payload.auditor_lead_id),
         "execution_start": payload.execution_start.astimezone(timezone.utc).isoformat(),
         "execution_end": payload.execution_end.astimezone(timezone.utc).isoformat(),
         "target_assets": payload.target_assets,
@@ -289,12 +295,12 @@ def update_roe_proposal(
     payload: RoeCreateSchema,
     current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> dict[str, Any]:
-    """Update a RoE agreement when in DRAFT or REVISION_REQUESTED state (Auditor Lead)."""
+    """Update a RoE agreement when in DRAFT or REVISION_REQUESTED state (Client PoC / Legal Rep)."""
     agreement = _fetch_agreement_or_404(agreement_id, current_user.user_id)
-    if agreement["auditor_lead_id"] != current_user.user_id:
+    if agreement["client_poc_id"] != current_user.user_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Solo el Auditor Lead puede modificar la propuesta de RoE.",
+            detail="Solo el Cliente PoC / Rep. Legal puede modificar la propuesta de RoE.",
         )
 
     if agreement.get("sha256_hash") or agreement["current_status"] not in {
@@ -373,8 +379,9 @@ def verify_roe_integrity(
     agreement = _fetch_agreement_or_404(agreement_id, current_user.user_id)
     stored_hash = agreement.get("sha256_hash")
     auditor_signed_at = agreement.get("auditor_signed_at")
+    client_signed_at = agreement.get("client_signed_at")
 
-    if not stored_hash or not auditor_signed_at:
+    if not stored_hash or not auditor_signed_at or not client_signed_at:
         return {
             "is_sealed": False,
             "is_intact": False,
@@ -448,10 +455,13 @@ def send_roe_to_client(
     agreement_id: str,
     current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> dict[str, Any]:
-    """Transition RoE from DRAFT or REVISION_REQUESTED to UNDER_CLIENT_REVIEW (Auditor)."""
+    """Transition RoE from DRAFT or REVISION_REQUESTED to review by the Auditor Lead (sent by Client)."""
     agreement = _fetch_agreement_or_404(agreement_id, current_user.user_id)
-    if agreement["auditor_lead_id"] != current_user.user_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Solo el Auditor Lead puede enviar a revision.")
+    if agreement["client_poc_id"] != current_user.user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo el Cliente PoC / Rep. Legal puede enviar la propuesta a revision del Auditor.",
+        )
 
     if agreement["current_status"] not in {RoeStatusEnum.DRAFT.value, RoeStatusEnum.REVISION_REQUESTED.value}:
         raise HTTPException(
@@ -474,15 +484,22 @@ def request_roe_revision(
     payload: RoeRevisionRequestSchema,
     current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> dict[str, Any]:
-    """Return RoE to REVISION_REQUESTED, record client observations, and increment version."""
+    """Return RoE to REVISION_REQUESTED, record Auditor suggestions/observations, and increment version."""
     agreement = _fetch_agreement_or_404(agreement_id, current_user.user_id)
-    if agreement["client_poc_id"] != current_user.user_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Solo el Cliente PoC puede solicitar reparos.")
+    if agreement["auditor_lead_id"] != current_user.user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo el Auditor Lead puede ingresar sugerencias o reparos sobre la propuesta.",
+        )
 
-    if agreement["current_status"] != RoeStatusEnum.UNDER_CLIENT_REVIEW.value:
+    if agreement.get("sha256_hash") or agreement["current_status"] not in {
+        RoeStatusEnum.DRAFT.value,
+        RoeStatusEnum.UNDER_CLIENT_REVIEW.value,
+        RoeStatusEnum.REVISION_REQUESTED.value,
+    }:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Solo se pueden ingresar reparos cuando el acuerdo esta en UNDER_CLIENT_REVIEW.",
+            detail="No se pueden ingresar sugerencias en un acuerdo ya aprobado, sellado o archivado.",
         )
 
     now_iso = datetime.now(timezone.utc).isoformat()
@@ -492,7 +509,7 @@ def request_roe_revision(
         "version": int(agreement["version"]),
         "observations": payload.observations,
         "requested_at": now_iso,
-        "requested_by": meta.get("client_rep_name") or "Representante del Cliente",
+        "requested_by": meta.get("auditor_lead_name") or "Auditor Lead",
     })
     meta["revision_history"] = history
 
@@ -512,28 +529,37 @@ def client_approve_roe(
     payload: RoeClientApproveSchema,
     current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> dict[str, Any]:
-    """Record client approval and first timestamped electronic signature."""
+    """Record Auditor Lead technical approval and first timestamped electronic signature."""
     agreement = _fetch_agreement_or_404(agreement_id, current_user.user_id)
-    if agreement["client_poc_id"] != current_user.user_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Solo el Cliente PoC puede aprobar y firmar.")
+    if agreement["auditor_lead_id"] != current_user.user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo el Auditor Lead puede aprobar tecnicamente y firmar en esta etapa.",
+        )
 
     if agreement["current_status"] != RoeStatusEnum.UNDER_CLIENT_REVIEW.value:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="El acuerdo debe estar en UNDER_CLIENT_REVIEW para ser aprobado.",
+            detail="El acuerdo debe estar en revision por el Auditor para ser aprobado.",
         )
-    if not payload.backup_confirmed:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="El cliente debe confirmar la existencia de respaldos previos (backup_confirmed).",
-        )
+
+    backup_val = (
+        payload.backup_confirmed
+        if payload.backup_confirmed is not None
+        else bool(agreement.get("backup_confirmed"))
+    )
+    cloud_val = (
+        payload.cloud_authorization_confirmed
+        if payload.cloud_authorization_confirmed is not None
+        else bool(agreement.get("cloud_authorization_confirmed"))
+    )
 
     now_iso = datetime.now(timezone.utc).isoformat()
     record = {
         "current_status": RoeStatusEnum.APPROVED_BY_CLIENT.value,
-        "backup_confirmed": payload.backup_confirmed,
-        "cloud_authorization_confirmed": payload.cloud_authorization_confirmed,
-        "client_signed_at": now_iso,
+        "backup_confirmed": backup_val,
+        "cloud_authorization_confirmed": cloud_val,
+        "auditor_signed_at": now_iso,
         "excluded_assets": agreement["excluded_assets"],
         "updated_at": now_iso,
     }
@@ -547,19 +573,48 @@ def seal_roe_agreement(
     payload: RoeSealSchema,
     current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> dict[str, Any]:
-    """Auditor counter-signs, computes canonical SHA-256 hash, and activates the RoE."""
+    """Client PoC / Legal Rep counter-signs, confirms backups, computes canonical SHA-256 hash, and activates the RoE."""
     agreement = _fetch_agreement_or_404(agreement_id, current_user.user_id)
-    if agreement["auditor_lead_id"] != current_user.user_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Solo el Auditor Lead puede sellar el acuerdo.")
+    if agreement["client_poc_id"] != current_user.user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo el Cliente PoC / Rep. Legal puede contra-firmar y sellar el acuerdo.",
+        )
 
     if agreement["current_status"] != RoeStatusEnum.APPROVED_BY_CLIENT.value:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="El acuerdo requiere la firma previa del cliente (APPROVED_BY_CLIENT).",
+            detail="El acuerdo requiere la aprobacion y firma previa del Auditor Lead.",
+        )
+
+    backup_val = (
+        payload.backup_confirmed
+        if payload.backup_confirmed is not None
+        else bool(agreement.get("backup_confirmed"))
+    )
+    cloud_val = (
+        payload.cloud_authorization_confirmed
+        if payload.cloud_authorization_confirmed is not None
+        else bool(agreement.get("cloud_authorization_confirmed"))
+    )
+    if not backup_val:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El cliente debe confirmar la existencia de respaldos previos (backup_confirmed) para contra-firmar y sellar.",
         )
 
     now_iso = datetime.now(timezone.utc).isoformat()
-    canonical_payload = _build_canonical_roe_payload(agreement, now_iso)
+    auditor_sig = agreement.get("auditor_signed_at") or now_iso
+    client_sig = agreement.get("client_signed_at") or now_iso
+
+    agreement_to_seal = {
+        **agreement,
+        "backup_confirmed": backup_val,
+        "cloud_authorization_confirmed": cloud_val,
+        "client_signed_at": client_sig,
+        "auditor_signed_at": auditor_sig,
+    }
+    canonical_payload = _build_canonical_roe_payload(agreement_to_seal, auditor_sig)
     sha256_digest = compute_sha256_hash(canonical_payload)
 
     target_status = (
@@ -568,7 +623,10 @@ def seal_roe_agreement(
 
     record = {
         "current_status": target_status,
-        "auditor_signed_at": now_iso,
+        "backup_confirmed": backup_val,
+        "cloud_authorization_confirmed": cloud_val,
+        "client_signed_at": client_sig,
+        "auditor_signed_at": auditor_sig,
         "sha256_hash": sha256_digest,
         "excluded_assets": agreement["excluded_assets"],
         "updated_at": now_iso,

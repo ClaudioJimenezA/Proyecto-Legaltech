@@ -72,6 +72,11 @@ export default function ContractViewer({
     !isSealed &&
     (agreement.current_status === 'DRAFT' ||
       agreement.current_status === 'REVISION_REQUESTED');
+  const canAuditorSuggest =
+    !isSealed &&
+    ['DRAFT', 'UNDER_CLIENT_REVIEW', 'REVISION_REQUESTED'].includes(
+      agreement.current_status
+    );
 
   const handleSend = async () => {
     setActionLoading(true);
@@ -79,7 +84,7 @@ export default function ContractViewer({
     try {
       await onSendToClient(agreement.id);
     } catch (err) {
-      setActionError(err.message || 'Error al enviar al cliente.');
+      setActionError(err.message || 'Error al enviar a revisión del auditor.');
     } finally {
       setActionLoading(false);
     }
@@ -94,36 +99,39 @@ export default function ContractViewer({
       setShowRevisionModal(false);
       setObservations('');
     } catch (err) {
-      setActionError(err.message || 'Error al enviar reparos.');
+      setActionError(err.message || 'Error al enviar sugerencias.');
     } finally {
       setActionLoading(false);
     }
   };
 
   const handleApprove = async () => {
-    if (!backupConfirmCheck) {
-      setActionError('Debe marcar la casilla de confirmación de respaldos previos para firmar.');
-      return;
-    }
     setActionLoading(true);
     setActionError('');
     try {
       await onClientApprove(agreement.id, {
-        backupConfirmed: backupConfirmCheck,
-        cloudAuthorizationConfirmed: cloudConfirmCheck,
+        backupConfirmed: agreement.backup_confirmed ?? true,
+        cloudAuthorizationConfirmed: agreement.cloud_authorization_confirmed ?? true,
       });
     } catch (err) {
-      setActionError(err.message || 'Error al firmar como cliente.');
+      setActionError(err.message || 'Error al aprobar y firmar como auditor.');
     } finally {
       setActionLoading(false);
     }
   };
 
   const handleSeal = async () => {
+    if (!backupConfirmCheck) {
+      setActionError('Debe marcar la casilla de confirmación de respaldos previos para contra-firmar y sellar.');
+      return;
+    }
     setActionLoading(true);
     setActionError('');
     try {
-      await onSeal(agreement.id);
+      await onSeal(agreement.id, {
+        backupConfirmed: backupConfirmCheck,
+        cloudAuthorizationConfirmed: cloudConfirmCheck,
+      });
     } catch (err) {
       setActionError(err.message || 'Error al sellar el acuerdo.');
     } finally {
@@ -245,7 +253,7 @@ export default function ContractViewer({
                 )}
               </div>
             )}
-            {isEditable && onEdit && (
+            {currentRole === 'client' && isEditable && onEdit && (
               <button
                 type="button"
                 onClick={onEdit}
@@ -253,6 +261,39 @@ export default function ContractViewer({
               >
                 <Edit3 className="w-3.5 h-3.5" />
                 Agregar Cláusulas / Editar Texto
+              </button>
+            )}
+            {currentRole === 'client' && isEditable && (
+              <button
+                type="button"
+                onClick={handleSend}
+                disabled={actionLoading}
+                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold shadow-xs flex items-center gap-1.5 disabled:opacity-50"
+              >
+                <Send className="w-3.5 h-3.5" />
+                {actionLoading ? 'Enviando...' : 'Enviar a Revisión del Auditor'}
+              </button>
+            )}
+            {currentRole === 'auditor' && canAuditorSuggest && (
+              <button
+                type="button"
+                onClick={() => setShowRevisionModal(true)}
+                disabled={actionLoading}
+                className="px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-xs font-bold shadow-xs flex items-center gap-1.5 disabled:opacity-50"
+              >
+                <MessageSquare className="w-3.5 h-3.5" />
+                Enviar Sugerencia al Cliente
+              </button>
+            )}
+            {currentRole === 'auditor' && agreement.current_status === 'UNDER_CLIENT_REVIEW' && (
+              <button
+                type="button"
+                onClick={handleApprove}
+                disabled={actionLoading}
+                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-xs flex items-center gap-1.5 disabled:opacity-50"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                {actionLoading ? 'Firmando...' : 'Aprobar y Firmar (Auditor)'}
               </button>
             )}
           </div>
@@ -279,22 +320,49 @@ export default function ContractViewer({
         </div>
       )}
 
-      {/* Historial de Observaciones / Reparos del Cliente */}
+      {/* Historial de Sugerencias / Reparos del Auditor (visible para el Cliente y trazabilidad) */}
       {revisionHistory.length > 0 && (
-        <div className="mb-6 p-4 bg-orange-50 border border-orange-300 rounded-lg text-orange-950 text-xs space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="font-bold text-sm flex items-center gap-2 text-orange-900">
-              <MessageSquareWarning className="w-5 h-5 text-orange-600" />
-              Bitácora de Observaciones y Reparos del Cliente ({revisionHistory.length})
-            </span>
-            {currentRole === 'auditor' && isEditable && onEdit && (
-              <button
-                type="button"
-                onClick={onEdit}
-                className="px-3 py-1 bg-orange-600 text-white rounded font-bold hover:bg-orange-700 flex items-center gap-1"
-              >
-                <Edit3 className="w-3.5 h-3.5" /> Editar Propuesta para Subsanar Reparos
-              </button>
+        <div
+          className={`mb-6 p-4 rounded-xl text-xs space-y-2.5 border-2 ${
+            currentRole === 'client' && agreement.current_status === 'REVISION_REQUESTED'
+              ? 'bg-orange-50 border-orange-400 text-orange-950 shadow-sm'
+              : 'bg-orange-50/70 border-orange-300 text-orange-950'
+          }`}
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <span className="font-black text-sm flex items-center gap-2 text-orange-900">
+                <MessageSquareWarning className="w-5 h-5 text-orange-600" />
+                {currentRole === 'client'
+                  ? `Sugerencias enviadas por el Auditor Lead (${revisionHistory.length})`
+                  : `Historial de Sugerencias enviadas al Cliente (${revisionHistory.length})`}
+              </span>
+              {currentRole === 'client' && isEditable && (
+                <p className="text-[11px] text-orange-800 mt-0.5">
+                  Revise las sugerencias técnicas del Auditor, edite el contrato si desea incorporarlas y reenvíelo a revisión.
+                </p>
+              )}
+            </div>
+            {currentRole === 'client' && isEditable && (
+              <div className="flex flex-wrap items-center gap-2">
+                {onEdit && (
+                  <button
+                    type="button"
+                    onClick={onEdit}
+                    className="px-3 py-1.5 bg-orange-600 text-white rounded-lg font-bold hover:bg-orange-700 flex items-center gap-1.5 shadow-xs"
+                  >
+                    <Edit3 className="w-3.5 h-3.5" /> Editar Contrato para Incorporar Sugerencias
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={handleSend}
+                  disabled={actionLoading}
+                  className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg font-bold hover:bg-indigo-700 flex items-center gap-1.5 shadow-xs disabled:opacity-50"
+                >
+                  <Send className="w-3.5 h-3.5" /> Reenviar al Auditor
+                </button>
+              </div>
             )}
           </div>
           {revisionHistory.map((rev, i) => (
@@ -764,7 +832,7 @@ export default function ContractViewer({
               <h3 className="text-sm font-black text-amber-950 uppercase tracking-wide">
                 Cláusulas Especiales Adicionales y Estipulaciones Acordadas con el Cliente
               </h3>
-              {isEditable && onEdit && (
+              {currentRole === 'client' && isEditable && onEdit && (
                 <button
                   type="button"
                   onClick={onEdit}
@@ -880,8 +948,8 @@ export default function ContractViewer({
               </p>
               <p className={agreement.client_signed_at ? 'text-emerald-400 font-bold' : 'text-amber-400'}>
                 {agreement.client_signed_at
-                  ? `SUSCRITO ELECTRÓNICAMENTE: ${new Date(agreement.client_signed_at).toISOString()}`
-                  : 'PENDIENTE DE FIRMA'}
+                  ? `SUSCRITO Y SELLADO: ${new Date(agreement.client_signed_at).toISOString()}`
+                  : 'PENDIENTE DE CONTRA-FIRMA Y SELLADO'}
               </p>
             </div>
 
@@ -899,8 +967,8 @@ export default function ContractViewer({
               </p>
               <p className={agreement.auditor_signed_at ? 'text-emerald-400 font-bold' : 'text-amber-400'}>
                 {agreement.auditor_signed_at
-                  ? `SUSCRITO Y SELLADO: ${new Date(agreement.auditor_signed_at).toISOString()}`
-                  : 'PENDIENTE DE CONTRA-FIRMA'}
+                  ? `SUSCRITO ELECTRÓNICAMENTE: ${new Date(agreement.auditor_signed_at).toISOString()}`
+                  : 'PENDIENTE DE FIRMA TÉCNICA'}
               </p>
             </div>
           </div>
@@ -970,8 +1038,8 @@ export default function ContractViewer({
         </div>
 
         <div className="flex flex-wrap gap-3">
-          {/* Acciones Auditor en DRAFT o REVISION_REQUESTED: Editar y Enviar a Revisión */}
-          {currentRole === 'auditor' && isEditable && (
+          {/* Acciones Cliente en DRAFT o REVISION_REQUESTED: Editar y Enviar a Revisión del Auditor */}
+          {currentRole === 'client' && isEditable && (
             <>
               {onEdit && (
                 <button
@@ -981,7 +1049,7 @@ export default function ContractViewer({
                   className="px-4 py-2.5 border border-indigo-300 text-indigo-700 bg-indigo-50 rounded-lg text-xs font-bold hover:bg-indigo-100 flex items-center gap-1.5"
                 >
                   <Edit3 className="w-4 h-4" />
-                  Editar Contrato / Aplicar Correcciones
+                  Editar Contrato / Aplicar Sugerencias
                 </button>
               )}
               <button
@@ -991,13 +1059,13 @@ export default function ContractViewer({
                 className="px-5 py-2.5 bg-indigo-600 text-white rounded-lg text-xs font-bold hover:bg-indigo-700 shadow-sm flex items-center gap-1.5 disabled:opacity-50"
               >
                 <Send className="w-4 h-4" />
-                {actionLoading ? 'Enviando...' : 'Enviar a Revisión del Cliente'}
+                {actionLoading ? 'Enviando...' : 'Enviar a Revisión del Auditor'}
               </button>
             </>
           )}
 
-          {/* Acciones Cliente en UNDER_CLIENT_REVIEW: Solicitar Reparos o Aprobar y Firmar */}
-          {currentRole === 'client' && agreement.current_status === 'UNDER_CLIENT_REVIEW' && (
+          {/* Acciones Auditor: Enviar Sugerencias al Cliente o Aprobar y Firmar */}
+          {currentRole === 'auditor' && canAuditorSuggest && (
             <>
               <button
                 type="button"
@@ -1006,19 +1074,10 @@ export default function ContractViewer({
                 className="px-4 py-2.5 border border-orange-300 text-orange-700 bg-orange-50 rounded-lg text-xs font-bold hover:bg-orange-100 flex items-center gap-1.5 disabled:opacity-50"
               >
                 <MessageSquare className="w-4 h-4" />
-                Solicitar Reparos / Modificaciones
+                Enviar Sugerencia al Cliente
               </button>
 
-              <div className="flex items-center gap-3">
-                <label className="text-[11px] text-slate-700 flex items-center gap-1.5 cursor-pointer font-semibold">
-                  <input
-                    type="checkbox"
-                    checked={backupConfirmCheck}
-                    onChange={(e) => setBackupConfirmCheck(e.target.checked)}
-                    className="rounded text-blue-600"
-                  />
-                  Certifico respaldos previos (Cláusula 3ª)
-                </label>
+              {agreement.current_status === 'UNDER_CLIENT_REVIEW' && (
                 <button
                   type="button"
                   onClick={handleApprove}
@@ -1026,23 +1085,34 @@ export default function ContractViewer({
                   className="px-5 py-2.5 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 shadow-sm flex items-center gap-1.5 disabled:opacity-50"
                 >
                   <CheckCircle2 className="w-4 h-4" />
-                  {actionLoading ? 'Firmando...' : 'Aprobar y Firmar (Cliente)'}
+                  {actionLoading ? 'Firmando...' : 'Aprobar y Firmar (Auditor)'}
                 </button>
-              </div>
+              )}
             </>
           )}
 
-          {/* Acción Auditor en APPROVED_BY_CLIENT: Contra-firmar y Sellar con SHA-256 */}
-          {currentRole === 'auditor' && agreement.current_status === 'APPROVED_BY_CLIENT' && (
-            <button
-              type="button"
-              onClick={handleSeal}
-              disabled={actionLoading}
-              className="px-6 py-2.5 bg-emerald-600 text-white rounded-lg text-xs font-bold hover:bg-emerald-700 shadow-md flex items-center gap-2 disabled:opacity-50"
-            >
-              <Fingerprint className="w-4 h-4" />
-              {actionLoading ? 'Sellando...' : 'Contra-Firmar y Sellar con SHA-256'}
-            </button>
+          {/* Acción Cliente en APPROVED_BY_CLIENT: Confirmar respaldos, Contra-firmar y Sellar con SHA-256 */}
+          {currentRole === 'client' && agreement.current_status === 'APPROVED_BY_CLIENT' && (
+            <div className="flex flex-wrap items-center gap-3">
+              <label className="text-[11px] text-slate-700 flex items-center gap-1.5 cursor-pointer font-semibold">
+                <input
+                  type="checkbox"
+                  checked={backupConfirmCheck}
+                  onChange={(e) => setBackupConfirmCheck(e.target.checked)}
+                  className="rounded text-emerald-600"
+                />
+                Certifico respaldos previos (Cláusula 3ª)
+              </label>
+              <button
+                type="button"
+                onClick={handleSeal}
+                disabled={actionLoading}
+                className="px-6 py-2.5 bg-emerald-600 text-white rounded-lg text-xs font-bold hover:bg-emerald-700 shadow-md flex items-center gap-2 disabled:opacity-50"
+              >
+                <Fingerprint className="w-4 h-4" />
+                {actionLoading ? 'Sellando...' : 'Contra-Firmar y Sellar con SHA-256 (Cliente)'}
+              </button>
+            </div>
           )}
 
           {/* Cuando el contrato ya está sellado: Acceso directo al Paso 2 (Live Logger & SOC Deconfliction) */}
@@ -1059,21 +1129,56 @@ export default function ContractViewer({
         </div>
       </div>
 
-      {/* Modal de Reparos del Cliente */}
+      {/* Modal de Sugerencias / Reparos del Auditor */}
       {showRevisionModal && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-xl max-w-lg w-full p-6 shadow-2xl border border-slate-200">
             <h3 className="text-lg font-bold text-slate-900 mb-1">
-              Devolver con Reparos / Observaciones al Auditor
+              Enviar Sugerencia al Cliente
             </h3>
-            <p className="text-xs text-slate-500 mb-4">
-              Detalle qué activos, horarios, datos de contacto o cláusulas deben corregirse antes de firmar.
+            <p className="text-xs text-slate-500 mb-3">
+              Escriba su sugerencia técnica o contractual. Esta aparecerá destacada en la vista del Cliente para que pueda editar y ajustar el contrato.
             </p>
+            <div className="flex flex-wrap gap-1.5 mb-3">
+              <button
+                type="button"
+                onClick={() =>
+                  setObservations(
+                    'Sugerimos enrolar nuestra IP pública secundaria 200.54.12.9 como respaldo del equipo pentester en la Cláusula 5.2.'
+                  )
+                }
+                className="px-2.5 py-1 bg-orange-50 hover:bg-orange-100 text-orange-900 border border-orange-200 rounded-md text-[11px] font-semibold"
+              >
+                + Sugerir IP secundaria
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setObservations(
+                    'Sugerimos excluir explícitamente el motor de base de datos productivo (Hard Deny List) y acotar la franja horaria nocturna de 23:00 a 05:00 hrs.'
+                  )
+                }
+                className="px-2.5 py-1 bg-orange-50 hover:bg-orange-100 text-orange-900 border border-orange-200 rounded-md text-[11px] font-semibold"
+              >
+                + Ajustar exclusiones / horario
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setObservations(
+                    'Recomendamos agregar una cláusula adicional de suspensión automática de pruebas durante cierres contables o eventos de alto tráfico.'
+                  )
+                }
+                className="px-2.5 py-1 bg-orange-50 hover:bg-orange-100 text-orange-900 border border-orange-200 rounded-md text-[11px] font-semibold"
+              >
+                + Sugerir cláusula especial
+              </button>
+            </div>
             <textarea
               rows={4}
               value={observations}
               onChange={(e) => setObservations(e.target.value)}
-              placeholder="Ej: Por favor excluir el subdominio pagos.bancoaustral.cl y ajustar la franja horaria de 23:00 a 05:00 hrs."
+              placeholder="Ej: Sugerimos enrolar nuestra IP secundaria 200.54.12.9, precisar el subdominio de staging y ajustar la ventana horaria de 23:00 a 05:00 hrs."
               className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none mb-4"
             />
             <div className="flex justify-end gap-2">
@@ -1090,7 +1195,7 @@ export default function ContractViewer({
                 disabled={actionLoading || !observations.trim()}
                 className="px-4 py-1.5 bg-orange-600 text-white text-xs font-bold rounded-lg hover:bg-orange-700 disabled:opacity-50"
               >
-                {actionLoading ? 'Enviando...' : 'Devolver al Auditor para Corrección'}
+                {actionLoading ? 'Enviando...' : 'Enviar Sugerencia al Cliente'}
               </button>
             </div>
           </div>

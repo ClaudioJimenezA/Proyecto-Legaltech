@@ -7,28 +7,28 @@ import React from 'react';
  */
 export const ROE_STATUS_CONFIG = {
   DRAFT: {
-    label: 'Borrador',
+    label: 'Borrador (Cliente)',
     badgeClass: 'bg-slate-100 text-slate-700 border-slate-300',
     dotClass: 'bg-slate-400',
-    description: 'Borrador en preparación técnica por el auditor.',
+    description: 'Borrador en preparación por el Cliente (Entidad Mandante).',
   },
   UNDER_CLIENT_REVIEW: {
-    label: 'En Revisión por Cliente',
+    label: 'En Revisión por Auditor',
     badgeClass: 'bg-amber-50 text-amber-900 border-amber-300',
     dotClass: 'bg-amber-500 animate-pulse',
-    description: 'Enviado formalmente a la contraparte para revisión y firma legal.',
+    description: 'Enviado por el cliente al Auditor Lead para revisión técnica y sugerencias.',
   },
   REVISION_REQUESTED: {
-    label: 'Con Reparos del Cliente',
+    label: 'Con Sugerencias del Auditor',
     badgeClass: 'bg-orange-50 text-orange-900 border-orange-300',
     dotClass: 'bg-orange-500',
-    description: 'El cliente devolvió observaciones o reparos para ser subsanados.',
+    description: 'El Auditor Lead devolvió sugerencias o reparos técnicos para ser ajustados por el cliente.',
   },
   APPROVED_BY_CLIENT: {
-    label: 'Aprobado por Cliente',
+    label: 'Aprobado por Auditor',
     badgeClass: 'bg-blue-50 text-blue-900 border-blue-300',
     dotClass: 'bg-blue-500',
-    description: 'Firmado digitalmente por el cliente; pendiente de contra-firma y sellado.',
+    description: 'Revisado y firmado técnicamente por el Auditor Lead; pendiente de contra-firma y sellado del Cliente.',
   },
   SIGNED_AND_SEALED: {
     label: 'Sellado Inmutable (SHA-256)',
